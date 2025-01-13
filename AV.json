@@ -12,6 +12,12 @@
             "api": "csp_tgs",
             "ext": "https://ghp.xptvhelper.link/https://raw.githubusercontent.com/fangkuia/XPTV/refs/heads/main/js/tgs.js" 
         },
+        {
+            "name": "有爱爱",
+            "type": 3,
+            "api": "csp_uaa",
+            "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/uua.js"
+        },
         
     ]
 }
