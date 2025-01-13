@@ -20,6 +20,13 @@ let appConfig = {
             ext: {
                 tag: 'upcoming',
             },
+         },
+          {
+            name: '分類',
+            ui: 1,
+            ext: {
+                tag: 'Genres',
+            },
         },
     ],
 }
