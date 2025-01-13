@@ -15,7 +15,7 @@
         {
             "name": "有爱爱",
             "type": 3,
-            "api": "csp_uaa",
+            "api": "csp_uaasp1",
             "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/uua.js"
         },
         
