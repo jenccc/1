@@ -1,0 +1,10 @@
+{
+    "sites": [
+        { 
+            "name": "Youtube music", 
+            "type": 3, 
+            "api": "csp_youtubemusic",
+            "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/yumusic.js"
+        }
+    ]
+}
