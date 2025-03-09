@@ -56,9 +56,9 @@ let appConfig = {
             ui: 1,
         },
 				{
-            name: '黑人',
+            name: '推薦最新',
             ext: {
-                id: '17',
+                id: 'time',
             },
             ui: 1,
         },
