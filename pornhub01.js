@@ -42,9 +42,9 @@ let appConfig = {
             },
             ui: 1,
         },{
-            name: 'top rated',
+            name: 'MANACHANX',
             ext: {
-                id: 'ht',
+                id: 'MANACHANX',
             },
             ui: 1,
         },
