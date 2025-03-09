@@ -55,6 +55,13 @@ let appConfig = {
             },
             ui: 1,
         },
+				{
+            name: '黑人',
+            ext: {
+                id: '17',
+            },
+            ui: 1,
+        },
     ],
 }
 
