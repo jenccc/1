@@ -135,7 +135,7 @@ async function getPlayinfo(ext) {
     const { data, name } = ext
 
     const param = data.split('').reverse().join('')
-    const url = `https://lk1.supremejav.com/supjav.php?c=${param}`
+    const url = `https://www.xvideos.com=${param}`
     const res = await $fetch.get(url, {
         headers: {
             'User-Agent': UA,
