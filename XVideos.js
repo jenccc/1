@@ -2,43 +2,50 @@ const cheerio = createCheerio()
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
-let appConfig = {
+const appConfig = {
     ver: 1,
-    title: 'XVideos',
+    title: 'xvideos',
     site: 'https://www.xvideos.com',
     tabs: [
         {
-            name: 'home',
+            name: '热门',
             ext: {
-                id: 'sy',
+                id: 'popular',
             },
             ui: 1,
         },
         {
-            name: 'newest',
+            name: '有码',
             ext: {
-                id: 'cm',
+                id: 'category/censored-jav',
             },
             ui: 1,
         },
         {
-            name: 'most viewed',
+            name: '无码',
             ext: {
-                id: 'mv',
+                id: 'category/uncensored-jav',
             },
             ui: 1,
         },
         {
-            name: 'hottest',
+            name: '素人',
             ext: {
-                id: 'ht',
+                id: 'category/amateur',
             },
             ui: 1,
         },
         {
-            name: 'top rated',
+            name: '中文字幕',
             ext: {
-                id: 'tr',
+                id: 'category/chinese-subtitles',
+            },
+            ui: 1,
+        },
+        {
+            name: '无码破解',
+            ext: {
+                id: 'category/reducing-mosaic',
             },
             ui: 1,
         },
@@ -53,18 +60,8 @@ async function getCards(ext) {
     ext = argsify(ext)
     let cards = []
     let { page = 1, id } = ext
-    let url = '${ appConfig.site }'
-    if (id === 'sy') {
-        url = `${appConfig.site}/video?`
-        if (page > 1) {
-            url = url + `page=${page}`
-        }
-    } else {
-        url = `${appConfig.site}/video?o=${id}`
-        if (page > 1) {
-            url = url + `&page=${page}`
-        }
-    }
+
+    const url = appConfig.site + `/${id}/page/${page}`
 
     const { data } = await $fetch.get(url, {
         headers: {
@@ -74,20 +71,20 @@ async function getCards(ext) {
 
     const $ = cheerio.load(data)
 
-    $('li.videoBox').each((_, element) => {
-        const href = $(element).find('.phimage a.img').attr('href')
-        const title = $(element).find('.title a').attr('title')
-        const cover = $(element).find('.phimage a.img img').attr('src') || $(element).find('.phimage a.img img').attr('data-mediumthumb') || ''
-        const subTitle = $(element).find('.views').text().trim() || ''
-        const duration = $(element).find('.duration').text().trim() || ''
+    const videos = $('.post')
+    videos.each((_, e) => {
+        const href = $(e).find('a').attr('href')
+        const title = $(e).find('a').attr('title')
+        const cover = $(e).find('a img').attr('data-original')
+        const remarks = $(e).find('.con .meta .date').text()
+
         cards.push({
             vod_id: href,
             vod_name: title,
             vod_pic: cover,
-            vod_remarks: subTitle,
-            vod_duration: duration,
+            vod_remarks: '',
             ext: {
-                url: appConfig.site + href,
+                url: href,
             },
         })
     })
@@ -108,15 +105,17 @@ async function getTracks(ext) {
         },
     })
 
-    const jsonStr = data.match(/var flashvars_.* = \{(.*?)\};/)[1]
-    const json = JSON.parse('{' + jsonStr + '}')
-    const videos = json.mediaDefinitions.filter((e) => e.format === 'hls')
-    videos.forEach((e) => {
+    const $ = cheerio.load(data)
+    const btns = $('a.btn-server')
+    btns.each((_, e) => {
+        const name = $(e).text()
+        const data_link = $(e).attr('data-link')
         tracks.push({
-            name: e.quality,
+            name,
             pan: '',
             ext: {
-                url: e.videoUrl,
+                data: data_link,
+                name,
             },
         })
     })
@@ -124,7 +123,7 @@ async function getTracks(ext) {
     return jsonify({
         list: [
             {
-                title: 'é»è®¤åç»',
+                title: '默认分组',
                 tracks,
             },
         ],
@@ -133,12 +132,90 @@ async function getTracks(ext) {
 
 async function getPlayinfo(ext) {
     ext = argsify(ext)
-    const url = ext.url
-    const headers = {
-        'User-Agent': UA,
+    const { data, name } = ext
+
+    const param = data.split('').reverse().join('')
+    const url = `https://lk1.supremejav.com/supjav.php?c=${param}`
+    const res = await $fetch.get(url, {
+        headers: {
+            'User-Agent': UA,
+            Referer: `https://lk1.supremejav.com/supjav.php?l=${data}&bg=undefined`,
+        },
+    })
+    let playUrl = ''
+
+    if (name === 'TV') {
+        const config = res.data
+            .match(/decodeURIComponent\(escape\(r\)\)\}(.*)\)/)[1]
+            .replace(/["\(\)]/g, '')
+            .split(',')
+
+        const decrypted = decrypt(...config)
+        playUrl = decrypted.match(/var urlPlay = '(.*?)';/)[1]
+
+        function decrypt(h, u, n, t, e, r) {
+            r = ''
+            for (var i = 0, len = h.length; i < len; i++) {
+                var s = ''
+                while (h[i] !== n[e]) {
+                    s += h[i]
+                    i++
+                }
+                for (var j = 0; j < n.length; j++) s = s.replace(new RegExp(n[j], 'g'), j)
+                r += String.fromCharCode(_0xe99c(s, e, 10) - t)
+            }
+            return decodeURIComponent(escape(r))
+        }
+
+        function _0xe99c(d, e, f) {
+            let str = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/'
+            var g = str.split('')
+            var h = g.slice(0, e)
+            var i = g.slice(0, f)
+            var j = d
+                .split('')
+                .reverse()
+                .reduce(function (a, b, c) {
+                    if (h.indexOf(b) !== -1) return (a += h.indexOf(b) * Math.pow(e, c))
+                }, 0)
+            var k = ''
+            while (j > 0) {
+                k = i[j % f] + k
+                j = (j - (j % f)) / f
+            }
+            return k || '0'
+        }
+    } else if (name === 'FST') {
+        const $ = cheerio.load(res.data)
+        $('script').each((_, e) => {
+            if ($(e).text().includes('eval')) {
+                const script = $(e).text().replace('eval', '')
+                const result = eval(script)
+                playUrl = result.match(/sources:\[\{file:"(.*?)"\}\]/)[1]
+            }
+        })
+    } else if (name === 'ST') {
+        const $ = cheerio.load(res.data)
+        let robot = $('#robotlink').text()
+        robot = robot.substring(0, robot.indexOf('&token=') + 7)
+        $('script').each((_, e) => {
+            let script = $(e).text()
+            if (script.includes("getElementById('robotlink')")) {
+                let token = script.split('&token=')[1].split("'")[0]
+                playUrl = 'https:/' + robot + token + '&stream=1'
+            }
+        })
+    } else if (name === 'VOE') {
+        const location = res.data.match(/window\.location\.href = '(.*?)';/)[1]
+        const locres = await $fetch.get(location, {
+            headers: {
+                'User-Agent': UA,
+            },
+        })
+        playUrl = locres.data.match(/prompt\("Node", "(.*?)"\);/)[1]
     }
 
-    return jsonify({ urls: [url], headers: [headers] })
+    return jsonify({ urls: [playUrl] })
 }
 
 async function search(ext) {
@@ -147,30 +224,27 @@ async function search(ext) {
 
     let text = encodeURIComponent(ext.text)
     let page = ext.page || 1
-    let url = `${appConfig.site}/video/search?search=${text}&page=${page}`
+    let url = `${appConfig.site}/page/${page}?s=${text}`
 
     const { data } = await $fetch.get(url, {
         headers: {
             'User-Agent': UA,
         },
     })
-
     const $ = cheerio.load(data)
 
-    $('li.videoBox').each((_, element) => {
-        const href = $(element).find('.phimage a.img').attr('href')
-        const title = $(element).find('.title a').attr('title')
-        const cover = $(element).find('.phimage a.img img').attr('src') || $(element).find('.phimage a.img img').attr('data-mediumthumb') || ''
-        const subTitle = $(element).find('.views').text().trim() || ''
-        const duration = $(element).find('.duration').text().trim() || ''
+    $('.post').each((_, e) => {
+        const href = $(e).find('a').attr('href')
+        const title = $(e).find('a').attr('title')
+        const cover = $(e).find('a img').attr('data-original')
+        const remarks = $(e).find('.con .meta .date').text()
         cards.push({
             vod_id: href,
             vod_name: title,
             vod_pic: cover,
-            vod_remarks: subTitle,
-            vod_duration: duration,
+            vod_remarks: remarks,
             ext: {
-                url: appConfig.site + href,
+                url: href,
             },
         })
     })
