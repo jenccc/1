@@ -6,7 +6,7 @@ async function getConfig() {
     tabs: [{
       name: '最近更新',
       ext: {  // ext在当请求 getCards 回传
-        id: 0,
+        id: channels-index,
       },
     }]
   }
