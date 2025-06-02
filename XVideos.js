@@ -5,7 +5,8 @@ async function getConfig() {
     site: "https://www.xvideos.com",
     tabs: [{
       name: '最近更新',
-      ext: {  // ext在当请求 getCards 回传
+      ext: { 
+        ui:1,
         id: channels-index,
       },
     }]
@@ -19,12 +20,12 @@ async function getCards(ext) {
   let cards = []
   return jsonify({
       list: [{
-        vod_id: '',
-        vod_name: '',
-        vod_pic: '',
-        vod_remarks: '',
-        ext: {  // ext在当请求 getTracks 回传
-          url: `xxx`,
+        vod_id: 'vid',
+        vod_name: 'vid',
+        vod_pic: 'cover',
+        vod_remarks: 'remarksa',
+        ext: {  // ext
+          url: `vid`,
         },
       }],
   });
