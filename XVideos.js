@@ -20,12 +20,12 @@ async function getCards(ext) {
   let cards = []
   return jsonify({
       list: [{
-        vod_id: 'vid',
-        vod_name: 'vid',
+        vod_id: 'href',
+        vod_name: 'title',
         vod_pic: 'cover',
         vod_remarks: 'remarksa',
         ext: {  // ext
-          url: `vid`,
+          url: `href`,
         },
       }],
   });
