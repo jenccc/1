@@ -1,4 +1,4 @@
-// XPTV: XVideos extension (分類 + 標籤)
+// XPTV: XVideos extension (分類 + 標籤 + 收藏類別)
 
 const cheerio = createCheerio();
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36";
@@ -10,6 +10,13 @@ const appConfig = {
   tabs: []
 };
 
+// 🟢 自選收藏類別（你可以自由增減）
+const favoriteCategories = [
+  { name: "亞洲", url: "https://www.xvideos.com/c/Asia-69" },
+  { name: "女同", url: "https://www.xvideos.com/c/Lesbian-20" },
+  { name: "HD 高畫質", url: "https://www.xvideos.com/c/HD-7" }
+];
+
 function abs(u) {
   if (!u) return "";
   if (u.startsWith("http")) return u;
@@ -19,10 +26,15 @@ function abs(u) {
 // 初始化分類 + 標籤
 async function getConfig() {
   if (appConfig.tabs.length === 0) {
-    // 預設
+    // 基礎
     appConfig.tabs.push({ name: "首頁", ext: { url: appConfig.site } });
     appConfig.tabs.push({ name: "最新", ext: { url: `${appConfig.site}/new/` } });
     appConfig.tabs.push({ name: "熱門", ext: { url: `${appConfig.site}/best/` } });
+
+    // 收藏類別
+    favoriteCategories.forEach(cat => {
+      appConfig.tabs.push({ name: "★ " + cat.name, ext: { url: cat.url } });
+    });
 
     // Categories
     const { data: catHtml } = await $fetch.get(`${appConfig.site}/categories/`, { headers: { "User-Agent": UA } });
@@ -84,11 +96,10 @@ async function getCards(ext) {
   return jsonify({ list, page, pagecount: 999 });
 }
 
-// 抓播放源
+// 播放源
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
-
   const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
   const tracks = [];
 
@@ -104,7 +115,6 @@ async function getTracks(ext) {
   return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
-// 播放資訊
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
@@ -118,7 +128,6 @@ async function search(ext) {
   ext = argsify(ext);
   const { keyword, page = 1 } = ext;
   let target = `${appConfig.site}/?k=${encodeURIComponent(keyword)}&p=${page}`;
-
   const { data } = await $fetch.get(target, { headers: { "User-Agent": UA } });
   const $ = cheerio.load(data);
 
