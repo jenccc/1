@@ -1,4 +1,4 @@
-// XPTV: Pornhub extension (cn.pornhub.com, Minimal Test Build)
+// XPTV: Pornhub extension (cn.pornhub.com, Test + Categories + Pornstars)
 
 const cheerio = createCheerio();
 const UA =
@@ -17,16 +17,58 @@ function abs(u) {
   return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
 }
 
-// === 配置 (只放首頁/最新，避免空白) ===
+// === 配置 ===
 async function getConfig() {
   if (appConfig.tabs.length <= 0) {
+    // 基礎區
+    appConfig.tabs.push({ name: "────────── 基礎區", ext: {}, ui: 0 });
     appConfig.tabs.push({ name: "首頁 Home", ext: { url: "https://cn.pornhub.com/video" }, ui: 1 });
     appConfig.tabs.push({ name: "最新 Latest", ext: { url: "https://cn.pornhub.com/video?o=cm" }, ui: 1 });
+
+    // 熱門類別 Categories
+    appConfig.tabs.push({ name: "────────── 熱門類別 Categories", ext: {}, ui: 0 });
+    try {
+      const { data } = await $fetch.get("https://cn.pornhub.com/categories", { headers: { "User-Agent": UA } });
+      const $ = cheerio.load(data);
+      $("ul.categories-list li a, .category-wrapper a").each((_, el) => {
+        const name = $(el).find("span").text().trim() || $(el).text().trim();
+        const href = $(el).attr("href");
+        if (name && href) {
+          appConfig.tabs.push({
+            name: "[分類] " + name,
+            ext: { url: abs(href) },
+            ui: 1
+          });
+        }
+      });
+    } catch (e) {
+      $print("抓取 Categories 失敗：" + e);
+    }
+
+    // 明星 Pornstars
+    appConfig.tabs.push({ name: "────────── 明星 Pornstars", ext: {}, ui: 0 });
+    try {
+      const { data } = await $fetch.get("https://cn.pornhub.com/pornstars", { headers: { "User-Agent": UA } });
+      const $ = cheerio.load(data);
+      $(".pornstarBox a").each((_, el) => {
+        const name = $(el).attr("title") || $(el).text().trim();
+        const href = $(el).attr("href");
+        if (name && href) {
+          appConfig.tabs.push({
+            name: "[明星] " + name,
+            ext: { url: abs(href) },
+            ui: 1
+          });
+        }
+      });
+    } catch (e) {
+      $print("抓取 Pornstars 失敗：" + e);
+    }
   }
   return jsonify(appConfig);
 }
 
-// === 影片清單 (基礎) ===
+// === 影片清單 ===
 async function getCards(ext) {
   ext = argsify(ext);
   const { url = "", page = 1 } = ext;
@@ -60,7 +102,7 @@ async function getCards(ext) {
   return jsonify({ list, page, pagecount: 99 });
 }
 
-// === 播放源 (測試只抓 flashvars json) ===
+// === 播放源 ===
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
@@ -95,7 +137,7 @@ async function getPlayinfo(ext) {
   return jsonify({ urls: [ext.url], headers: [{ "User-Agent": UA, Referer: appConfig.site }] });
 }
 
-// === 搜尋 (基礎) ===
+// === 搜尋 ===
 async function search(ext) {
   ext = argsify(ext);
   const text = ext.text || ext.keyword || "";
