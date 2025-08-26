@@ -1,4 +1,4 @@
-// XPTV: XVideos extension (動態抓取所有分類)
+// XPTV: XVideos extension (分類 + 標籤)
 
 const cheerio = createCheerio();
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36";
@@ -7,7 +7,7 @@ const appConfig = {
   ver: 1,
   title: "XVideos",
   site: "https://www.xvideos.com",
-  tabs: [] // 動態生成
+  tabs: []
 };
 
 function abs(u) {
@@ -16,21 +16,33 @@ function abs(u) {
   return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
 }
 
-// 初始化：抓取分類頁面，建立 tabs
+// 初始化分類 + 標籤
 async function getConfig() {
   if (appConfig.tabs.length === 0) {
-    const { data } = await $fetch.get(`${appConfig.site}/tags/`, { headers: { "User-Agent": UA } });
-    const $ = cheerio.load(data);
-
+    // 預設
     appConfig.tabs.push({ name: "首頁", ext: { url: appConfig.site } });
     appConfig.tabs.push({ name: "最新", ext: { url: `${appConfig.site}/new/` } });
     appConfig.tabs.push({ name: "熱門", ext: { url: `${appConfig.site}/best/` } });
 
-    $("ul.tags > li > a").each((_, el) => {
-      const name = $(el).text().trim();
-      const href = $(el).attr("href");
+    // Categories
+    const { data: catHtml } = await $fetch.get(`${appConfig.site}/categories/`, { headers: { "User-Agent": UA } });
+    const $c = cheerio.load(catHtml);
+    $c("ul#categories li a").each((_, el) => {
+      const name = $c(el).text().trim();
+      const href = $c(el).attr("href");
       if (name && href) {
-        appConfig.tabs.push({ name, ext: { url: abs(href) } });
+        appConfig.tabs.push({ name: "[分類] " + name, ext: { url: abs(href) } });
+      }
+    });
+
+    // Tags
+    const { data: tagHtml } = await $fetch.get(`${appConfig.site}/tags/`, { headers: { "User-Agent": UA } });
+    const $t = cheerio.load(tagHtml);
+    $t("ul.tags li a").each((_, el) => {
+      const name = $t(el).text().trim();
+      const href = $t(el).attr("href");
+      if (name && href) {
+        appConfig.tabs.push({ name: "[標籤] " + name, ext: { url: abs(href) } });
       }
     });
   }
@@ -78,7 +90,6 @@ async function getTracks(ext) {
   const { url } = ext;
 
   const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
-
   const tracks = [];
 
   const hls = data.match(/setVideoHLS\(['"](.+?)['"]\)/);
@@ -90,26 +101,16 @@ async function getTracks(ext) {
   const mp4Low = data.match(/setVideoUrlLow\(['"](.+?)['"]\)/);
   if (mp4Low) tracks.push({ name: "MP4低", ext: { url: mp4Low[1], referer: url } });
 
-  return jsonify({
-    list: [{ title: "播放", tracks }]
-  });
+  return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
-// 回傳播放資訊
+// 播放資訊
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
   const referer = ext.referer || appConfig.site;
-
-  const headers = {
-    "User-Agent": UA,
-    "Referer": referer
-  };
-
-  return jsonify({
-    urls: [playUrl],
-    headers: [headers]
-  });
+  const headers = { "User-Agent": UA, "Referer": referer };
+  return jsonify({ urls: [playUrl], headers: [headers] });
 }
 
 // 搜尋
