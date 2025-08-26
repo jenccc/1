@@ -1,23 +1,13 @@
-// XPTV: XVideos extension (clean build)
-// 技術學習用途，站點可能改版需調整選擇器與正則
+// XPTV: XVideos extension (動態抓取所有分類)
 
 const cheerio = createCheerio();
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36";
 
 const appConfig = {
   ver: 1,
   title: "XVideos",
   site: "https://www.xvideos.com",
-  tabs: [
-    { name: "首頁", ext: { id: "" }, ui: 1 },
-    { name: "最新", ext: { id: "new" }, ui: 1 },
-    { name: "最多觀看", ext: { id: "top" }, ui: 1 },
-    { name: "HD 精選", ext: { id: "quality_hd" }, ui: 1 },
-    { name: "女同性戀", ext: { id: "lesbian" }, ui: 1 },
-    { name: "亞洲", ext: { id: "asian" }, ui: 1 },
-    { name: "素人", ext: { id: "amateur" }, ui: 1 },
-  ],
+  tabs: [] // 動態生成
 };
 
 function abs(u) {
@@ -26,121 +16,86 @@ function abs(u) {
   return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
 }
 
+// 初始化：抓取分類頁面，建立 tabs
 async function getConfig() {
+  if (appConfig.tabs.length === 0) {
+    const { data } = await $fetch.get(`${appConfig.site}/tags/`, { headers: { "User-Agent": UA } });
+    const $ = cheerio.load(data);
+
+    appConfig.tabs.push({ name: "首頁", ext: { url: appConfig.site } });
+    appConfig.tabs.push({ name: "最新", ext: { url: `${appConfig.site}/new/` } });
+    appConfig.tabs.push({ name: "熱門", ext: { url: `${appConfig.site}/best/` } });
+
+    $("ul.tags > li > a").each((_, el) => {
+      const name = $(el).text().trim();
+      const href = $(el).attr("href");
+      if (name && href) {
+        appConfig.tabs.push({ name, ext: { url: abs(href) } });
+      }
+    });
+  }
   return jsonify(appConfig);
 }
 
+// 抓影片清單
 async function getCards(ext) {
   ext = argsify(ext);
-  const { id = "", page = 1 } = ext;
+  const { url, page = 1 } = ext;
 
-  let url = appConfig.site;
-  if (id) {
-    // 標籤/分類
-    url = `${appConfig.site}/tags/${id}/${page}`;
-  } else if (page > 1) {
-    // 首頁預設走「最新」分頁
-    url = `${appConfig.site}/new/${page}`;
+  let target = url;
+  if (page > 1) {
+    target = url.replace(/\/$/, "") + "/" + page + "/";
   }
 
-  const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
+  const { data } = await $fetch.get(target, { headers: { "User-Agent": UA } });
   const $ = cheerio.load(data);
 
-  const list = [];
-  $("div.thumb-block").each((_, el) => {
-    const a = $(el).find("a.thumb, a");
+  let list = [];
+  $(".thumb-block").each((_, el) => {
+    const a = $(el).find("a.thumb");
     const href = a.attr("href");
-    const title =
-      $(el).find("p.title").text().trim() ||
-      a.attr("title") ||
-      $(el).find("img").attr("alt") ||
-      "";
-    const img = $(el).find("img");
-    const cover = img.attr("data-src") || img.attr("src") || "";
+    const title = a.attr("title");
+    const cover = $(el).find("img").attr("data-src") || $(el).find("img").attr("src");
+    const duration = $(el).find(".duration").text().trim();
 
-    const views = $(el).find(".metadata span.views").text().trim() || "";
-    const duration = $(el).find(".duration").text().trim() || "";
-
-    if (href && title && cover) {
+    if (href && title) {
       list.push({
         vod_id: abs(href),
         vod_name: title,
         vod_pic: cover,
-        vod_remarks: views,
-        vod_duration: duration,
-        ext: { url: abs(href) },
+        vod_remarks: duration,
+        ext: { url: abs(href) }
       });
     }
   });
 
-  // XVideos 沒有明確 pagecount，給個大數
   return jsonify({ list, page, pagecount: 999 });
 }
 
+// 抓播放源
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
-  // 在 getTracks 先把可用播放源都找出來，交給 getPlayinfo 直播
+
   const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
 
   const tracks = [];
 
-  // 1) HLS
-  const m3u8 =
-    data.match(/setVideoHLS\('([^']+)'\)/)?.[1] ||
-    data.match(/setVideoHLS\("([^"]+)"\)/)?.[1];
-  if (m3u8) {
-    tracks.push({ name: "HLS", pan: "", ext: { url: m3u8, referer: url } });
-  }
+  const hls = data.match(/setVideoHLS\(['"](.+?)['"]\)/);
+  if (hls) tracks.push({ name: "HLS", ext: { url: hls[1], referer: url } });
 
-  // 2) MP4 高/低清
-  const mp4High =
-    data.match(/setVideoUrlHigh\('([^']+)'\)/)?.[1] ||
-    data.match(/setVideoUrlHigh\("([^"]+)"\)/)?.[1];
-  const mp4Low =
-    data.match(/setVideoUrlLow\('([^']+)'\)/)?.[1] ||
-    data.match(/setVideoUrlLow\("([^"]+)"\)/)?.[1];
+  const mp4High = data.match(/setVideoUrlHigh\(['"](.+?)['"]\)/);
+  if (mp4High) tracks.push({ name: "MP4高", ext: { url: mp4High[1], referer: url } });
 
-  if (mp4High) tracks.push({ name: "MP4(高)", pan: "", ext: { url: mp4High, referer: url } });
-  if (mp4Low) tracks.push({ name: "MP4(低)", pan: "", ext: { url: mp4Low, referer: url } });
-
-  // 3) 後備：頁面 JSON 片段（有時存在）
-  if (tracks.length === 0) {
-    try {
-      const jsonStr = data.match(/html5player\s*=\s*({[\s\S]*?});/)?.[1];
-      if (jsonStr) {
-        const j = JSON.parse(jsonStr);
-        if (j.HLS) tracks.push({ name: "HLS", pan: "", ext: { url: j.HLS, referer: url } });
-        if (j.highdef) tracks.push({ name: "MP4(高)", pan: "", ext: { url: j.highdef, referer: url } });
-        if (j.lowdef) tracks.push({ name: "MP4(低)", pan: "", ext: { url: j.lowdef, referer: url } });
-      }
-    } catch (e) {
-      // 忽略
-    }
-  }
-
-  // 4) 再後備：OpenGraph
-  if (tracks.length === 0) {
-    const $ = cheerio.load(data);
-    const ogVideo = $('meta[property="og:video"]').attr("content");
-    if (ogVideo) tracks.push({ name: "OG Video", pan: "", ext: { url: ogVideo, referer: url } });
-  }
-
-  // 至少留一條（避免空陣列）
-  if (tracks.length === 0) {
-    tracks.push({ name: "原頁面", pan: "", ext: { url, referer: url } });
-  }
+  const mp4Low = data.match(/setVideoUrlLow\(['"](.+?)['"]\)/);
+  if (mp4Low) tracks.push({ name: "MP4低", ext: { url: mp4Low[1], referer: url } });
 
   return jsonify({
-    list: [
-      {
-        title: "播放",
-        tracks,
-      },
-    ],
+    list: [{ title: "播放", tracks }]
   });
 }
 
+// 回傳播放資訊
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
@@ -148,48 +103,39 @@ async function getPlayinfo(ext) {
 
   const headers = {
     "User-Agent": UA,
-    Referer: referer,
-    // XVideos 多數情況不需 Cookies；如遇到區域/年齡牆可在此補 Cookie
-    // Cookie: "age_verified=1; ..."
+    "Referer": referer
   };
 
   return jsonify({
     urls: [playUrl],
-    headers: [headers],
+    headers: [headers]
   });
 }
 
+// 搜尋
 async function search(ext) {
   ext = argsify(ext);
-  const text = ext.text || ext.keyword || "";
-  const page = Number(ext.page || 1);
-  const url = `${appConfig.site}/?k=${encodeURIComponent(text)}&p=${page}`;
+  const { keyword, page = 1 } = ext;
+  let target = `${appConfig.site}/?k=${encodeURIComponent(keyword)}&p=${page}`;
 
-  const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
+  const { data } = await $fetch.get(target, { headers: { "User-Agent": UA } });
   const $ = cheerio.load(data);
 
-  const list = [];
-  $("div.thumb-block").each((_, el) => {
-    const a = $(el).find("a.thumb, a");
+  let list = [];
+  $(".thumb-block").each((_, el) => {
+    const a = $(el).find("a.thumb");
     const href = a.attr("href");
-    const title =
-      $(el).find("p.title").text().trim() ||
-      a.attr("title") ||
-      $(el).find("img").attr("alt") ||
-      "";
-    const img = $(el).find("img");
-    const cover = img.attr("data-src") || img.attr("src") || "";
-    const views = $(el).find(".metadata span.views").text().trim() || "";
-    const duration = $(el).find(".duration").text().trim() || "";
+    const title = a.attr("title");
+    const cover = $(el).find("img").attr("data-src") || $(el).find("img").attr("src");
+    const duration = $(el).find(".duration").text().trim();
 
-    if (href && title && cover) {
+    if (href && title) {
       list.push({
         vod_id: abs(href),
         vod_name: title,
         vod_pic: cover,
-        vod_remarks: views,
-        vod_duration: duration,
-        ext: { url: abs(href) },
+        vod_remarks: duration,
+        ext: { url: abs(href) }
       });
     }
   });
