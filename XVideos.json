@@ -1,10 +1,15 @@
-{
-  "key": "csp_xvideos",
-  "name": "XVideos",
-  "type": 3,
-  "api": "csp_xvideos",
-  "searchable": 1,
-  "quickSearch": 1,
-  "filterable": 0,
-  "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/XVideos.js"
+ "sites": [
+        {
+            "name": "xvideo",
+            "type": 3,
+            "api": "csp_xvideo",
+            "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/XVideos.js"
+        },
+        {
+            "name": "jen.pornhub",
+            "type": 3,
+            "api": "csp_jen.pornhub",
+            "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/jen.pornhub.js"
+        },
+    ]
 }
