@@ -1,35 +1,10 @@
-// XPTV: 91Porn extension (Auto Mirror Switch)
+// XPTV: 91Porn extension (Fixed Mirror 91pornhd.com)
 
 const cheerio = createCheerio();
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-// 多個候選鏡像站（自動切換）
-const SITES = [
-  "https://91porn.com",
-  "https://cn.91porn.com",
-  "http://91porn.com",
-  "https://52.91porn.com",
-  "https://91pornHD.com"
-];
-
-let SITE = SITES[0]; // 會自動切換
-
-async function pickSite() {
-  for (const s of SITES) {
-    try {
-      const { status } = await $fetch.get(s + "/index.php", { headers: { "User-Agent": UA }, timeout: 5000 });
-      if (status === 200) {
-        SITE = s;
-        $print("91Porn 使用鏡像站: " + SITE);
-        return SITE;
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  return SITE; // 全部失敗時仍用第一個
-}
+const SITE = "https://91pornhd.com";
 
 const appConfig = {
   ver: 1,
@@ -45,12 +20,10 @@ const appConfig = {
 };
 
 async function getConfig() {
-  await pickSite();
-  appConfig.site = SITE;
   return jsonify(appConfig);
 }
 
-// === Cards ===
+// === 抓影片卡片 ===
 async function getCards(ext) {
   ext = argsify(ext);
   const { path = "/v.php", page = 1 } = ext;
@@ -81,7 +54,7 @@ async function getCards(ext) {
   return jsonify({ list, page, pagecount: 99 });
 }
 
-// === Tracks ===
+// === 播放源解析 ===
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
@@ -99,7 +72,7 @@ async function getTracks(ext) {
   return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
-// === Playinfo ===
+// === 播放資訊 ===
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   return jsonify({
@@ -108,7 +81,7 @@ async function getPlayinfo(ext) {
   });
 }
 
-// === Search ===
+// === 搜尋 ===
 async function search(ext) {
   ext = argsify(ext);
   const { text = "", page = 1 } = ext;
