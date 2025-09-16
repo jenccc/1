@@ -1,5 +1,4 @@
-// XPTV: xxoo168 extension (完整初版)
-// 先抓列表 → 再抓播放頁 <source> / m3u8 / mp4
+// XPTV: xxoo168 extension (修正 & 加強版)
 
 const cheerio = createCheerio();
 const UA =
@@ -22,11 +21,10 @@ async function getConfig() {
   return jsonify(appConfig);
 }
 
-// 將 #/video/xxx 轉換為 https://h5.xxoo168.org/video/xxx
 function abs(u) {
   if (!u) return "";
   if (u.startsWith("#/")) {
-    return SITE + "/" + u.slice(2);
+    return SITE + "/" + u.slice(2);  // 把 "#/video/123" 轉成完整 URL
   }
   if (!u.startsWith("http")) {
     return SITE + u;
@@ -34,13 +32,12 @@ function abs(u) {
   return u;
 }
 
-// === 抓影片列表 ===
 async function getCards(ext) {
   ext = argsify(ext);
   const { path = "/#/LongVideo", page = 1 } = ext;
 
-  // 暫時先用首頁 URL，頁碼待調整
   let listUrl = SITE + path;
+  // 若頁面分頁 url 不同，可在這裡加分頁處理
 
   const { data } = await $fetch.get(listUrl, {
     headers: { "User-Agent": UA }
@@ -49,14 +46,14 @@ async function getCards(ext) {
   const $ = cheerio.load(data);
   const list = [];
 
-  // 按你提供的 HTML 結構抓取影片卡片
   $('a[href^="#/video"]').each((_, el) => {
     const a = $(el);
     const href = a.attr("href") || "";
     const title = a.find("span.title").text().trim();
     const cover =
       a.find("img.cover-img").attr("data-src") ||
-      a.find("img.cover-img").attr("src");
+      a.find("img.cover-img").attr("src") ||
+      "";
     const duration = a.find(".mask .duration").text().trim();
     const playCount = a.find(".mask .play-count").text().trim();
 
@@ -74,7 +71,6 @@ async function getCards(ext) {
   return jsonify({ list, page, pagecount: 999 });
 }
 
-// === 抓播放源 ===
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
@@ -85,31 +81,37 @@ async function getTracks(ext) {
 
   const tracks = [];
 
-  // 1. <source src="...">
-  const src = data.match(/<source[^>]+src="([^"]+)"/i)?.[1];
-  if (src) tracks.push({ name: "標清", ext: { url: src, referer: url } });
+  // 1. 看 video > source
+  const sourceMatch = data.match(/<source[^>]+src=['"]([^'"]+)['"]/i);
+  if (sourceMatch && sourceMatch[1]) {
+    tracks.push({ name: "標清", ext: { url: sourceMatch[1], referer: url } });
+  }
 
-  // 2. .m3u8
-  const m3u8 = data.match(/https?:\/\/[^"']+\.m3u8/);
-  if (m3u8) tracks.push({ name: "HLS", ext: { url: m3u8[0], referer: url } });
+  // 2. m3u8
+  const m3u8Match = data.match(/https?:\/\/[^"']+\.m3u8/);
+  if (m3u8Match && m3u8Match[0]) {
+    tracks.push({ name: "HLS", ext: { url: m3u8Match[0], referer: url } });
+  }
 
-  // 3. .mp4
-  const mp4 = data.match(/https?:\/\/[^"']+\.mp4/);
-  if (mp4) tracks.push({ name: "MP4", ext: { url: mp4[0], referer: url } });
+  // 3. mp4
+  const mp4Match = data.match(/https?:\/\/[^"']+\.mp4/);
+  if (mp4Match && mp4Match[0]) {
+    tracks.push({ name: "MP4", ext: { url: mp4Match[0], referer: url } });
+  }
 
-  // 4. player.src("...") JS 變數
-  const playerSrc = data.match(/player\.src\(['"]([^'"]+)['"]\)/);
-  if (playerSrc)
-    tracks.push({ name: "PlayerSrc", ext: { url: playerSrc[1], referer: url } });
+  // 4. player.src(...) 或其他 JS
+  const playerSrcMatch = data.match(/player\.src\(['"]([^'"]+)['"]\)/i);
+  if (playerSrcMatch && playerSrcMatch[1]) {
+    tracks.push({ name: "PlayerSrc", ext: { url: playerSrcMatch[1], referer: url } });
+  }
 
-  // 保底
-  if (tracks.length === 0)
+  if (tracks.length === 0) {
     tracks.push({ name: "原頁面", ext: { url, referer: url } });
+  }
 
   return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
-// === 播放請求頭 ===
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   return jsonify({
@@ -118,13 +120,15 @@ async function getPlayinfo(ext) {
   });
 }
 
-// === 搜尋 ===
 async function search(ext) {
   ext = argsify(ext);
   const { text = "", page = 1 } = ext;
   const url = `${SITE}/#/search/${encodeURIComponent(text)}?page=${page}`;
 
-  const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
+  const { data } = await $fetch.get(url, {
+    headers: { "User-Agent": UA }
+  });
+
   const $ = cheerio.load(data);
   const list = [];
 
@@ -134,8 +138,10 @@ async function search(ext) {
     const title = a.find("span.title").text().trim();
     const cover =
       a.find("img.cover-img").attr("data-src") ||
-      a.find("img.cover-img").attr("src");
+      a.find("img.cover-img").attr("src") ||
+      "";
     const duration = a.find(".mask .duration").text().trim();
+
     if (title && cover && href) {
       list.push({
         vod_id: abs(href),
