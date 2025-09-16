@@ -1,0 +1,10 @@
+{
+    "sites": [
+        { 
+            "name": "香蕉", 
+            "type": 3, 
+            "api": "csp_xxoo168",
+            "ext": "https://raw.githubusercontent.com/jenccc/1/refs/heads/main/xxoo168.js"
+        }
+    ]
+}
