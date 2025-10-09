@@ -1,4 +1,5 @@
-// XPTV: XVideos extension (Enhanced + Pornstars)
+// XPTV Extension: XVideos (Enhanced + Pornstars)
+// Version: 2.1
 
 const cheerio = createCheerio();
 const UA =
@@ -60,4 +61,108 @@ const appConfig = {
   ]
 };
 
-// 其餘函式 (getConfig, getCards, getTracks, getPlayinfo, search) 與前版相同。
+function abs(u) {
+  if (!u) return "";
+  if (u.startsWith("http")) return u;
+  return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
+}
+
+async function getConfig() {
+  return jsonify(appConfig);
+}
+
+async function getCards(ext) {
+  ext = argsify(ext);
+  const { id = "", page = 1, url } = ext;
+  let listUrl = url || appConfig.site;
+  if (id) listUrl = `${appConfig.site}/tags/${id}/${page}`;
+  else if (page > 1) listUrl = `${appConfig.site}/new/${page}`;
+
+  const { data } = await $fetch.get(listUrl, { headers: { "User-Agent": UA } }).catch(() => ({ data: "" }));
+  const $ = cheerio.load(data || "");
+  const list = [];
+
+  $("div.thumb-block, div.thumb-under").each((_, el) => {
+    const a = $(el).find("a.thumb, a");
+    const href = a.attr("href");
+    const title = $(el).find("p.title").text().trim() || a.attr("title") || "";
+    const img = $(el).find("img");
+    const cover = img.attr("data-src") || img.attr("src") || "";
+    const views = $(el).find(".metadata span.views").text().trim() || "";
+    const duration = $(el).find(".duration").text().trim() || "";
+
+    if (href && title && cover) {
+      list.push({
+        vod_id: abs(href),
+        vod_name: title,
+        vod_pic: abs(cover),
+        vod_remarks: views,
+        vod_duration: duration,
+        ext: { url: abs(href) }
+      });
+    }
+  });
+
+  return jsonify({ list, page, pagecount: 999 });
+}
+
+async function getTracks(ext) {
+  ext = argsify(ext);
+  const { url } = ext;
+  const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
+  const tracks = [];
+
+  const m3u8 = data.match(/setVideoHLS\(['"]([^'"]+)['"]\)/)?.[1];
+  if (m3u8) tracks.push({ name: "HLS", ext: { url: m3u8, referer: url } });
+
+  const mp4High = data.match(/setVideoUrlHigh\(['"]([^'"]+)['"]\)/)?.[1];
+  const mp4Low = data.match(/setVideoUrlLow\(['"]([^'"]+)['"]\)/)?.[1];
+  if (mp4High) tracks.push({ name: "MP4 高清", ext: { url: mp4High, referer: url } });
+  if (mp4Low) tracks.push({ name: "MP4 低清", ext: { url: mp4Low, referer: url } });
+
+  const ogVideo = data.match(/property="og:video" content="([^"]+)"/)?.[1];
+  if (!tracks.length && ogVideo) tracks.push({ name: "OG Video", ext: { url: ogVideo, referer: url } });
+
+  if (!tracks.length) tracks.push({ name: "原頁面", ext: { url, referer: url } });
+
+  return jsonify({ list: [{ title: "播放", tracks }] });
+}
+
+async function getPlayinfo(ext) {
+  ext = argsify(ext);
+  return jsonify({ urls: [ext.url], headers: [{ "User-Agent": UA, Referer: appConfig.site }] });
+}
+
+async function search(ext) {
+  ext = argsify(ext);
+  const text = ext.text || ext.keyword || "";
+  const page = Number(ext.page || 1);
+  const url = `${appConfig.site}/?k=${encodeURIComponent(text)}&p=${page}`;
+
+  const { data } = await $fetch.get(url, { headers: { "User-Agent": UA } });
+  const $ = cheerio.load(data);
+  const list = [];
+
+  $("div.thumb-block, div.thumb-under").each((_, el) => {
+    const a = $(el).find("a.thumb, a");
+    const href = a.attr("href");
+    const title = $(el).find("p.title").text().trim() || a.attr("title") || "";
+    const img = $(el).find("img");
+    const cover = img.attr("data-src") || img.attr("src") || "";
+    const views = $(el).find(".metadata span.views").text().trim() || "";
+    const duration = $(el).find(".duration").text().trim() || "";
+
+    if (href && title && cover) {
+      list.push({
+        vod_id: abs(href),
+        vod_name: title,
+        vod_pic: abs(cover),
+        vod_remarks: views,
+        vod_duration: duration,
+        ext: { url: abs(href) }
+      });
+    }
+  });
+
+  return jsonify({ list, page });
+}
