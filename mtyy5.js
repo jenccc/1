@@ -13,9 +13,13 @@ const appConfig = {
   ],
 };
 
-let DYNAMIC_COOKIE = ""; // 自動更新 Cookie
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+let COOKIE_CACHE = "";
+
+const UAs = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Mobile Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+];
 
 function abs(u) {
   if (!u) return "";
@@ -23,41 +27,32 @@ function abs(u) {
   return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
 }
 
-// 自動從首頁抓 Cookie
+function randomUA() {
+  return UAs[Math.floor(Math.random() * UAs.length)];
+}
+
+function randomReferer() {
+  const pages = ["/", "/vodtype/1.html", "/vodtype/2.html", "/vodtype/3.html"];
+  const pick = pages[Math.floor(Math.random() * pages.length)];
+  return appConfig.site + pick;
+}
+
 async function ensureCookie() {
-  if (DYNAMIC_COOKIE) return DYNAMIC_COOKIE;
+  if (COOKIE_CACHE) return COOKIE_CACHE;
   try {
-    const rsp = await $fetch.get(appConfig.site + "/", {
-      headers: { "User-Agent": UA },
-    });
+    const rsp = await $fetch.get(appConfig.site + "/", { headers: { "User-Agent": randomUA() } });
     const setCookie = rsp.headers["set-cookie"];
     if (setCookie) {
-      DYNAMIC_COOKIE = Array.isArray(setCookie)
-        ? setCookie.join("; ")
-        : setCookie;
+      COOKIE_CACHE = Array.isArray(setCookie) ? setCookie.join("; ") : setCookie;
     }
   } catch (e) {
     console.log("Cookie 初始化失敗", e.message);
   }
-  return DYNAMIC_COOKIE;
+  return COOKIE_CACHE;
 }
 
 async function getConfig() {
   return jsonify(appConfig);
-}
-
-// 自動重試的 GET
-async function safeGet(url, headers = {}, retry = 3) {
-  for (let i = 0; i < retry; i++) {
-    try {
-      const rsp = await $fetch.get(url, { headers });
-      if (rsp && rsp.data && rsp.status === 200) return rsp.data;
-    } catch (e) {
-      console.log(`第 ${i + 1} 次請求失敗: ${e.message}`);
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  return "";
 }
 
 async function getCards(ext) {
@@ -67,26 +62,27 @@ async function getCards(ext) {
   if (page > 1) url = url.replace(".html", `-${page}.html`);
 
   const cookie = await ensureCookie();
-  const html = await safeGet(url, {
-    "User-Agent": UA,
+  const headers = {
+    "User-Agent": randomUA(),
     Cookie: cookie,
-    Referer: appConfig.site + "/",
+    Referer: randomReferer(),
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-  });
+  };
 
-  if (!html) {
+  let html = "";
+  try {
+    const rsp = await $fetch.get(url, { headers });
+    html = rsp.data;
+  } catch (err) {
     return jsonify({
       list: [
         {
-          vod_name: "⚠️ 網站無回應或被防火牆擋住",
-          vod_pic:
-            "https://dummyimage.com/600x338/000/fff&text=Request+Failed",
-          vod_remarks: "請稍後重試或更換網路",
+          vod_name: "⚠️ 無法連線到伺服器",
+          vod_pic: "https://dummyimage.com/600x338/111/fff&text=Request+Failed",
+          vod_remarks: err.message,
           vod_id: "",
         },
       ],
-      page,
-      pagecount: 1,
     });
   }
 
@@ -111,10 +107,28 @@ async function getCards(ext) {
   });
 
   if (list.length === 0) {
+    // 嘗試從 script 中提取影片 json
+    const jsonMatch = html.match(/var\s+vod_list\s*=\s*(\[[\s\S]*?\]);/);
+    if (jsonMatch) {
+      try {
+        const vids = JSON.parse(jsonMatch[1]);
+        for (const v of vids) {
+          list.push({
+            vod_id: abs(v.url || v.link || ""),
+            vod_name: v.title || v.name || "未命名",
+            vod_pic: v.pic || "",
+            vod_remarks: "",
+          });
+        }
+      } catch {}
+    }
+  }
+
+  if (list.length === 0) {
     list.push({
-      vod_name: "⚠️ 無法取得影片列表",
-      vod_pic: "https://dummyimage.com/600x338/111/fff&text=No+Videos+Found",
-      vod_remarks: "請檢查 Cookie 或網站防爬",
+      vod_name: "⚠️ 防爬中，暫無內容",
+      vod_pic: "https://dummyimage.com/600x338/222/fff&text=No+Videos",
+      vod_remarks: "可能被 Cloudflare 攔截，請稍後再試",
       vod_id: "",
     });
   }
@@ -122,58 +136,32 @@ async function getCards(ext) {
   return jsonify({ list, page, pagecount: 999 });
 }
 
-// 播放頁解析
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
   const cookie = await ensureCookie();
-  const html = await safeGet(url, {
-    "User-Agent": UA,
-    Cookie: cookie,
-    Referer: appConfig.site + "/",
+  const html = await $fetch.get(url, {
+    headers: {
+      "User-Agent": randomUA(),
+      Cookie: cookie,
+      Referer: randomReferer(),
+    },
   });
 
-  if (!html) {
-    return jsonify({
-      list: [
-        {
-          title: "載入失敗",
-          tracks: [{ name: "無法載入", ext: { url } }],
-        },
-      ],
-    });
-  }
-
-  const tryRx = (...rxs) => {
-    for (const rx of rxs) {
-      const m = html.match(rx);
-      if (m && m[1]) return m[1];
-    }
-    return "";
-  };
-
-  const m3u8 =
-    tryRx(/"url":"(https[^"]+\.m3u8[^"]*)"/i) ||
-    tryRx(/src=["'](https[^"']+\.m3u8[^"']*)["']/i) ||
-    tryRx(/file:\s*["']([^"']+\.m3u8[^"']*)["']/i);
+  const data = html.data || "";
+  const m3u8Match = data.match(/https[^"'<>]+\.m3u8[^"'<>]*/i);
+  const m3u8 = m3u8Match ? m3u8Match[0] : "";
 
   const tracks = [];
   if (m3u8) {
-    tracks.push({
-      name: "原畫播放",
-      ext: { url: m3u8, referer: url },
-    });
+    tracks.push({ name: "原畫播放", ext: { url: m3u8, referer: url } });
   } else {
-    tracks.push({
-      name: "原頁播放",
-      ext: { url, referer: url },
-    });
+    tracks.push({ name: "原頁播放", ext: { url, referer: url } });
   }
 
   return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
-// 最終播放
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
@@ -183,10 +171,9 @@ async function getPlayinfo(ext) {
     urls: [playUrl],
     headers: [
       {
-        "User-Agent": UA,
+        "User-Agent": randomUA(),
         Referer: referer,
         Cookie: cookie,
-        "Accept-Language": "zh-CN,zh;q=0.9",
       },
     ],
   });
