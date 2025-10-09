@@ -1,7 +1,7 @@
 const cheerio = createCheerio();
 
 const appConfig = {
-  ver: 1,
+  ver: 2,
   title: "MTYY5",
   site: "https://www.mtyy5.com",
   tabs: [
@@ -13,8 +13,8 @@ const appConfig = {
   ],
 };
 
-// 你的有效 Cookie（已清理格式）
-const FIXED_COOKIE =
+// ✅ 目前使用的 Cookie（可隨時更新）
+let FIXED_COOKIE =
   "6baebcda651ec96cb78e82051847e85f=00f86ffe76a5317ffa03415601146193; popup_closed=true; server_name_session=e26fd9c9e3fa80e5c12b65f5b49124fd; mac_history=%7Blog%3A%5B%7B%22name%22%3A%22%5B%E7%94%B5%E8%A7%86%E5%89%A7%5D%E8%AE%B8%E6%88%91%E8%80%80%E7%9C%BC%22%2C%22link%22%3A%22https%3A%2F%2Fwww.mtyy5.com%2Fvodplay%2F196703-5-1.html%22%2C%22pic%22%3A%22https%3A%2F%2Fvcover-vt-pic.puui.qpic.cn%2Fvcover_vt_pic%2F0%2Fmzc00200f19q8q51726740653099%2F260%22%2C%22mid%22%3A%22%E7%AC%AC01%E9%9B%86%22%7D%5D%7D; Hm_lvt_wau1y1a5u38=1760019754; Hm_tf_wau1y1a5u38=1760019754; SITE_TOTAL_ID=08fcdefe199e5276cfcdabf13e9cf2ec; Hm_lpvt_wau1y1a5u38=1760019756;";
 
 const UA =
@@ -34,6 +34,17 @@ function randomReferer() {
 
 async function getConfig() {
   return jsonify(appConfig);
+}
+
+/**
+ * 檢查 HTML 是否可能被防爬 / Cookie 過期
+ */
+function isInvalidHTML(html) {
+  if (!html) return true;
+  if (html.includes("Cloudflare") || html.includes("Access denied")) return true;
+  if (html.includes("請開啟JavaScript") || html.includes("安全驗證")) return true;
+  if (!/<a[^>]+vodlist_thumb/.test(html)) return true;
+  return false;
 }
 
 async function getCards(ext) {
@@ -57,12 +68,30 @@ async function getCards(ext) {
     return jsonify({
       list: [
         {
-          vod_name: "⚠️ 無法連線到伺服器",
+          vod_name: "⚠️ 無法連線",
           vod_pic: "https://dummyimage.com/600x338/111/fff&text=Request+Failed",
           vod_remarks: err.message,
           vod_id: "",
         },
       ],
+    });
+  }
+
+  // 🧠 自動判斷 Cookie 是否過期
+  if (isInvalidHTML(html)) {
+    return jsonify({
+      list: [
+        {
+          vod_name: "⚠️ Cookie 可能已過期",
+          vod_pic:
+            "https://dummyimage.com/600x338/222/fff&text=Cookie+Expired",
+          vod_remarks:
+            "請重新開啟 https://www.mtyy5.com 登入，複製新的 Cookie 並更新到 mtyy5.js。",
+          vod_id: "",
+        },
+      ],
+      page,
+      pagecount: 1,
     });
   }
 
@@ -88,9 +117,10 @@ async function getCards(ext) {
 
   if (list.length === 0) {
     list.push({
-      vod_name: "⚠️ 無法取得影片列表",
-      vod_pic: "https://dummyimage.com/600x338/222/fff&text=No+Videos",
-      vod_remarks: "請檢查 Cookie 是否過期",
+      vod_name: "⚠️ 無影片內容",
+      vod_pic:
+        "https://dummyimage.com/600x338/333/fff&text=No+Videos+Found",
+      vod_remarks: "可能網站更新或防爬中",
       vod_id: "",
     });
   }
@@ -98,11 +128,14 @@ async function getCards(ext) {
   return jsonify({ list, page, pagecount: 999 });
 }
 
+/**
+ * 播放源解析
+ */
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
 
-  const html = await $fetch.get(url, {
+  const rsp = await $fetch.get(url, {
     headers: {
       "User-Agent": UA,
       Cookie: FIXED_COOKIE,
@@ -110,7 +143,7 @@ async function getTracks(ext) {
     },
   });
 
-  const data = html.data || "";
+  const data = rsp.data || "";
   const m3u8Match = data.match(/https[^"'<>]+\.m3u8[^"'<>]*/i);
   const m3u8 = m3u8Match ? m3u8Match[0] : "";
 
@@ -124,6 +157,9 @@ async function getTracks(ext) {
   return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
+/**
+ * 播放請求 Header
+ */
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
