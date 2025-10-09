@@ -13,13 +13,12 @@ const appConfig = {
   ],
 };
 
-let COOKIE_CACHE = "";
+// 你的有效 Cookie（已清理格式）
+const FIXED_COOKIE =
+  "6baebcda651ec96cb78e82051847e85f=00f86ffe76a5317ffa03415601146193; popup_closed=true; server_name_session=e26fd9c9e3fa80e5c12b65f5b49124fd; mac_history=%7Blog%3A%5B%7B%22name%22%3A%22%5B%E7%94%B5%E8%A7%86%E5%89%A7%5D%E8%AE%B8%E6%88%91%E8%80%80%E7%9C%BC%22%2C%22link%22%3A%22https%3A%2F%2Fwww.mtyy5.com%2Fvodplay%2F196703-5-1.html%22%2C%22pic%22%3A%22https%3A%2F%2Fvcover-vt-pic.puui.qpic.cn%2Fvcover_vt_pic%2F0%2Fmzc00200f19q8q51726740653099%2F260%22%2C%22mid%22%3A%22%E7%AC%AC01%E9%9B%86%22%7D%5D%7D; Hm_lvt_wau1y1a5u38=1760019754; Hm_tf_wau1y1a5u38=1760019754; SITE_TOTAL_ID=08fcdefe199e5276cfcdabf13e9cf2ec; Hm_lpvt_wau1y1a5u38=1760019756;";
 
-const UAs = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
-  "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Mobile Safari/537.36",
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-];
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36";
 
 function abs(u) {
   if (!u) return "";
@@ -27,28 +26,10 @@ function abs(u) {
   return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
 }
 
-function randomUA() {
-  return UAs[Math.floor(Math.random() * UAs.length)];
-}
-
 function randomReferer() {
   const pages = ["/", "/vodtype/1.html", "/vodtype/2.html", "/vodtype/3.html"];
   const pick = pages[Math.floor(Math.random() * pages.length)];
   return appConfig.site + pick;
-}
-
-async function ensureCookie() {
-  if (COOKIE_CACHE) return COOKIE_CACHE;
-  try {
-    const rsp = await $fetch.get(appConfig.site + "/", { headers: { "User-Agent": randomUA() } });
-    const setCookie = rsp.headers["set-cookie"];
-    if (setCookie) {
-      COOKIE_CACHE = Array.isArray(setCookie) ? setCookie.join("; ") : setCookie;
-    }
-  } catch (e) {
-    console.log("Cookie 初始化失敗", e.message);
-  }
-  return COOKIE_CACHE;
 }
 
 async function getConfig() {
@@ -61,10 +42,9 @@ async function getCards(ext) {
   let url = appConfig.site + path;
   if (page > 1) url = url.replace(".html", `-${page}.html`);
 
-  const cookie = await ensureCookie();
   const headers = {
-    "User-Agent": randomUA(),
-    Cookie: cookie,
+    "User-Agent": UA,
+    Cookie: FIXED_COOKIE,
     Referer: randomReferer(),
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
   };
@@ -107,28 +87,10 @@ async function getCards(ext) {
   });
 
   if (list.length === 0) {
-    // 嘗試從 script 中提取影片 json
-    const jsonMatch = html.match(/var\s+vod_list\s*=\s*(\[[\s\S]*?\]);/);
-    if (jsonMatch) {
-      try {
-        const vids = JSON.parse(jsonMatch[1]);
-        for (const v of vids) {
-          list.push({
-            vod_id: abs(v.url || v.link || ""),
-            vod_name: v.title || v.name || "未命名",
-            vod_pic: v.pic || "",
-            vod_remarks: "",
-          });
-        }
-      } catch {}
-    }
-  }
-
-  if (list.length === 0) {
     list.push({
-      vod_name: "⚠️ 防爬中，暫無內容",
+      vod_name: "⚠️ 無法取得影片列表",
       vod_pic: "https://dummyimage.com/600x338/222/fff&text=No+Videos",
-      vod_remarks: "可能被 Cloudflare 攔截，請稍後再試",
+      vod_remarks: "請檢查 Cookie 是否過期",
       vod_id: "",
     });
   }
@@ -139,12 +101,12 @@ async function getCards(ext) {
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
-  const cookie = await ensureCookie();
+
   const html = await $fetch.get(url, {
     headers: {
-      "User-Agent": randomUA(),
-      Cookie: cookie,
-      Referer: randomReferer(),
+      "User-Agent": UA,
+      Cookie: FIXED_COOKIE,
+      Referer: appConfig.site + "/",
     },
   });
 
@@ -166,14 +128,13 @@ async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
   const referer = ext.referer || appConfig.site;
-  const cookie = await ensureCookie();
   return jsonify({
     urls: [playUrl],
     headers: [
       {
-        "User-Agent": randomUA(),
+        "User-Agent": UA,
         Referer: referer,
-        Cookie: cookie,
+        Cookie: FIXED_COOKIE,
       },
     ],
   });
