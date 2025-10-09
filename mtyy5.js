@@ -13,10 +13,9 @@ const appConfig = {
   ],
 };
 
+let DYNAMIC_COOKIE = ""; // 自動更新 Cookie
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
-
-const COOKIE = `6baebcda651ec96cb78e82051847e85f=8166a1400d7a2215e754dd06cfd79e2b;server_name_session=e26fd9c9e3fa80e5c12b65f5b49124fd;mac_history=%7Blog%3A%5B%7B%22name%22%3A%22%5B%E7%94%B5%E8%A7%86%E5%89%A7%5D%E8%AE%B8%E6%88%91%E8%80%80%E7%9C%BC%22%2C%22link%22%3A%22https%3A%2F%2Fwww.mtyy5.com%2Fvodplay%2F196703-5-1.html%22%2C%22pic%22%3A%22https%3A%2F%2Fvcover-vt-pic.puui.qpic.cn%2Fvcover_vt_pic%2F0%2Fmzc00200f19q8q51726740653099%2F260%22%2C%22mid%22%3A%22%E7%AC%AC01%E9%9B%86%22%7D%5D%7D;Hm_lvt_wau1y1a5u38=1760018069;Hm_tf_wau1y1a5u38=1760018069;SITE_TOTAL_ID=8bf70d2a4d2140cc329afb525e9288b2;Hm_lpvt_wau1y1a5u38=1760018084;PHPSESSID=d5btt8n5glal54qigiphs7cenn;`;
 
 function abs(u) {
   if (!u) return "";
@@ -24,8 +23,41 @@ function abs(u) {
   return appConfig.site.replace(/\/$/, "") + (u.startsWith("/") ? u : "/" + u);
 }
 
+// 自動從首頁抓 Cookie
+async function ensureCookie() {
+  if (DYNAMIC_COOKIE) return DYNAMIC_COOKIE;
+  try {
+    const rsp = await $fetch.get(appConfig.site + "/", {
+      headers: { "User-Agent": UA },
+    });
+    const setCookie = rsp.headers["set-cookie"];
+    if (setCookie) {
+      DYNAMIC_COOKIE = Array.isArray(setCookie)
+        ? setCookie.join("; ")
+        : setCookie;
+    }
+  } catch (e) {
+    console.log("Cookie 初始化失敗", e.message);
+  }
+  return DYNAMIC_COOKIE;
+}
+
 async function getConfig() {
   return jsonify(appConfig);
+}
+
+// 自動重試的 GET
+async function safeGet(url, headers = {}, retry = 3) {
+  for (let i = 0; i < retry; i++) {
+    try {
+      const rsp = await $fetch.get(url, { headers });
+      if (rsp && rsp.data && rsp.status === 200) return rsp.data;
+    } catch (e) {
+      console.log(`第 ${i + 1} 次請求失敗: ${e.message}`);
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return "";
 }
 
 async function getCards(ext) {
@@ -34,15 +66,31 @@ async function getCards(ext) {
   let url = appConfig.site + path;
   if (page > 1) url = url.replace(".html", `-${page}.html`);
 
-  const { data } = await $fetch.get(url, {
-    headers: {
-      "User-Agent": UA,
-      Cookie: COOKIE,
-      Referer: appConfig.site + "/",
-    },
+  const cookie = await ensureCookie();
+  const html = await safeGet(url, {
+    "User-Agent": UA,
+    Cookie: cookie,
+    Referer: appConfig.site + "/",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
   });
 
-  const $ = cheerio.load(data);
+  if (!html) {
+    return jsonify({
+      list: [
+        {
+          vod_name: "⚠️ 網站無回應或被防火牆擋住",
+          vod_pic:
+            "https://dummyimage.com/600x338/000/fff&text=Request+Failed",
+          vod_remarks: "請稍後重試或更換網路",
+          vod_id: "",
+        },
+      ],
+      page,
+      pagecount: 1,
+    });
+  }
+
+  const $ = cheerio.load(html);
   const list = [];
 
   $("a.vodlist_thumb").each((_, a) => {
@@ -51,7 +99,6 @@ async function getCards(ext) {
     const title = img.attr("alt") || $(a).attr("title") || "";
     const cover = img.attr("data-original") || img.attr("src") || "";
     const remark = $(a).find(".pic_text").text().trim();
-
     if (href && title) {
       list.push({
         vod_id: abs(href),
@@ -63,26 +110,43 @@ async function getCards(ext) {
     }
   });
 
+  if (list.length === 0) {
+    list.push({
+      vod_name: "⚠️ 無法取得影片列表",
+      vod_pic: "https://dummyimage.com/600x338/111/fff&text=No+Videos+Found",
+      vod_remarks: "請檢查 Cookie 或網站防爬",
+      vod_id: "",
+    });
+  }
+
   return jsonify({ list, page, pagecount: 999 });
 }
 
+// 播放頁解析
 async function getTracks(ext) {
   ext = argsify(ext);
   const { url } = ext;
-
-  const { data } = await $fetch.get(url, {
-    headers: {
-      "User-Agent": UA,
-      Cookie: COOKIE,
-      Referer: appConfig.site + "/",
-      "Accept-Language": "zh-CN,zh;q=0.9",
-    },
+  const cookie = await ensureCookie();
+  const html = await safeGet(url, {
+    "User-Agent": UA,
+    Cookie: cookie,
+    Referer: appConfig.site + "/",
   });
 
-  // 嘗試匹配 m3u8
+  if (!html) {
+    return jsonify({
+      list: [
+        {
+          title: "載入失敗",
+          tracks: [{ name: "無法載入", ext: { url } }],
+        },
+      ],
+    });
+  }
+
   const tryRx = (...rxs) => {
     for (const rx of rxs) {
-      const m = data.match(rx);
+      const m = html.match(rx);
       if (m && m[1]) return m[1];
     }
     return "";
@@ -96,14 +160,12 @@ async function getTracks(ext) {
   const tracks = [];
   if (m3u8) {
     tracks.push({
-      name: "原畫質播放",
-      pan: "",
+      name: "原畫播放",
       ext: { url: m3u8, referer: url },
     });
   } else {
     tracks.push({
       name: "原頁播放",
-      pan: "",
       ext: { url, referer: url },
     });
   }
@@ -111,17 +173,19 @@ async function getTracks(ext) {
   return jsonify({ list: [{ title: "播放", tracks }] });
 }
 
+// 最終播放
 async function getPlayinfo(ext) {
   ext = argsify(ext);
   const playUrl = ext.url;
   const referer = ext.referer || appConfig.site;
+  const cookie = await ensureCookie();
   return jsonify({
     urls: [playUrl],
     headers: [
       {
         "User-Agent": UA,
         Referer: referer,
-        Cookie: COOKIE,
+        Cookie: cookie,
         "Accept-Language": "zh-CN,zh;q=0.9",
       },
     ],
